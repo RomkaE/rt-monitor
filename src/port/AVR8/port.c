@@ -1,15 +1,14 @@
-/*
- * port_smonitor.c
- *
- *  Created on: 
- *      Author: 
- */
 
 /*============================ INCLUDES ======================================*/
+
 #include <stdint.h>
-#include "board.h"
 #include <avr/io.h>
 #include <avr/interrupt.h>
+
+#include "sys_monitor_cfg.h"
+#include "../inc/port.h"
+
+#include "FreeRTOSConfig.h"
 
 /*============================ PRIVATE DEFINITIONS ===========================*/
 
@@ -18,55 +17,67 @@
 
 
 /*============================ VARIABLES =====================================*/
-extern char SMBuff[SYS_MONITOR_BUFF_SIZE];
-uint16_t	iBuff = 0, lenghtBuff;
+
+static uint8_t *s_pBufUART;
+static uint16_t s_sizeBufUART;
+static uint16_t s_idxBufUART;
 
 /*============================ PRIVATE PROTOTYPES ============================*/
 
 
 /*============================ IMPLEMENTATION (PRIVATE FUNCTIONS) ============*/
-SIGNAL(USART0_UDRE_vect){
-	UDR0 = SMBuff[iBuff];
-	iBuff++;
-	if (iBuff > lenghtBuff) {
-		UCSR0B &= ~(1<<UDRIE0);
-	}//if
-}//USART_UDRE_vect
+
+ISR(USART1_UDRE_vect)
+{
+  UDR1 = s_pBufUART[s_idxBufUART];
+  s_idxBufUART++;
+  if (s_idxBufUART >= s_sizeBufUART)
+  {
+    UCSR1B &= ~(1 << UDRIE1);   // DISABLE <Data Register Empty Interrupt>
+    s_idxBufUART = 0;
+//    osal_semaphore_post(s_SemUart, true);
+  }
+}
 
 /*============================ IMPLEMENTATION (PUBLIC FUNCTIONS) =============*/
 
-void portSysMonitor_Init(void){
-	// USART:
-	UBRR0L = 16;						// 57600 fosc = 16MHz
-	UCSR0B |= (1<<TXEN0);
-}//portSysMonitor_Init
+void portSysMonitor_Init(void)
+{
+  UBRR1H = 0;
+  UBRR1L = 8;           // 115200
+  UCSR1B |= (1<<TXEN1);
 
-void portSysMonitor_TxBuff(uint16_t lenght){
-	iBuff = 0;
-	lenghtBuff = lenght;
-	UCSR0B |= (1<<UDRIE0);
-}//portSysMonitor_TxBuff
+  UCSR1C |= (1<<UCSZ11) | (1<<UCSZ10);         // 8-bit frame
 
-void portSysMonitor_CONFIGURE_TIMER_FOR_RUN_TIME_STATS(void){
-	// TC:
-	TCCR3B = 4;
-}//portSysMonitor_CONFIGURE_TIMER_FOR_RUN_TIME_STATS
+  // Очистить флаги:
+  UDR1;                   // dummy read
+  UCSR1A |= (1 << TXC1) | (1 << RXC1); // сбросить TXC/RXC
+}
 
-uint32_t portSysMonitor_GetRunTimeCounterValue(void){
-static uint32_t cnt = 0;
-static uint16_t prevTC = 0;
-uint16_t TC;
-uint32_t dTC;
+void portSysMonitor_TxBuff(const void *_buff, uint16_t _lenght)
+{
+  s_sizeBufUART = _lenght;
+  s_pBufUART = _buff;
+  UCSR1B |= (1<<UDRIE1);    // ENABLE <Data Register Empty Interrupt>
+}
 
-	TC = TCNT3;
+void portSysMonitor_CONFIGURE_TIMER_FOR_RUN_TIME_STATS(void)
+{
+  // Сбросить счётчик
+  TCNT3 = 0;
 
-	if (prevTC > TC)
-		dTC = TC + (0xFFFF - prevTC);
-	else
-		dTC = TC - prevTC;
+  // Настроить Timer3 в нормальный режим (счёт до переполнения)
+  TCCR3A = 0;
 
-	prevTC = TC;
-	cnt = cnt + dTC;
+  // Запустить таймер с делителем 256: (CS32 = 1, CS31 = 0, CS30 = 0)
+  TCCR3B = (1 << CS32);
 
-	return cnt;
-}//portSysMonitor_GetRunTimeCounterValue
+  // Можно очистить флаги, если нужно:
+  TIFR3 = 0xFF;
+}
+
+configRUN_TIME_COUNTER_TYPE portSysMonitor_GetRunTimeCounterValue(void)
+{
+  uint16_t tim_cnt = TCNT3;
+  return (configRUN_TIME_COUNTER_TYPE)tim_cnt;
+}
