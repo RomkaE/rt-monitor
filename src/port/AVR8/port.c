@@ -8,6 +8,7 @@
 #include "sys_monitor_cfg.h"
 #include "../inc/port.h"
 
+#include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
 
 /*============================ PRIVATE DEFINITIONS ===========================*/
@@ -18,7 +19,7 @@
 
 /*============================ VARIABLES =====================================*/
 
-static uint8_t *s_pBufUART;
+static const uint8_t *s_pBufUART;
 static uint16_t s_sizeBufUART;
 static uint16_t s_idxBufUART;
 
@@ -63,21 +64,35 @@ void portSysMonitor_TxBuff(const void *_buff, uint16_t _lenght)
 
 void portSysMonitor_CONFIGURE_TIMER_FOR_RUN_TIME_STATS(void)
 {
-  // Сбросить счётчик
-  TCNT3 = 0;
+  TCNT3 = 0;      // clear counter
+  TCCR3A = 0;     // normal mode
+  TIFR3 = 0xFF;   // clear flags
 
-  // Настроить Timer3 в нормальный режим (счёт до переполнения)
-  TCCR3A = 0;
-
-  // Запустить таймер с делителем 256: (CS32 = 1, CS31 = 0, CS30 = 0)
-  TCCR3B = (1 << CS32);
-
-  // Можно очистить флаги, если нужно:
-  TIFR3 = 0xFF;
+  // CS | DIV
+  //  1 |  1
+  //  2 |  8
+  //  3 |  64
+  //  4 |  256
+  //  5 |  1024
+  TCCR3B = (4 << CS30);   // div 256
 }
 
 configRUN_TIME_COUNTER_TYPE portSysMonitor_GetRunTimeCounterValue(void)
 {
-  uint16_t tim_cnt = TCNT3;
-  return (configRUN_TIME_COUNTER_TYPE)tim_cnt;
+  configRUN_TIME_COUNTER_TYPE ret;
+
+  #if (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_16_BITS)
+    ret = TCNT3;
+  #elif (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_32_BITS)
+    static uint32_t counter = 0;
+    static uint16_t prev = 0;
+    uint16_t curr = TCNT3;
+    counter += (uint16_t)(curr - prev);
+    prev = curr;
+    ret = counter;
+  #else
+    #error "Unsupported configRUN_TIME_COUNTER_TYPE size"
+  #endif
+
+  return ret;
 }

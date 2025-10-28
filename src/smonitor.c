@@ -1,32 +1,39 @@
- 
-#include <stdbool.h>
+
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
-#include <limits.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdbool.h>
 
 #include "sys_monitor_cfg.h"
 #include "smonitor.h"
 #include "inc/terminal.h"
 #include "port/inc/port.h"
+#include "log/log.h"
 
 // FreeRTOS:
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "log/log.h"
-
-#define configCLEAR_RUN_TIME_STATS  1
-//#define PERCENT_ACCURACY    10
-
 #define SCALE    SYS_MON_PERCENT_SCALE
-
 #if SCALE == 10
   #define PREFIX_FRACT "01"
 #elif SCALE == 100
   #define PREFIX_FRACT "02"
+#elif SCALE == 1000
+  #define PREFIX_FRACT "03"
 #else
   #error "Unsupported SYS_MON_PERCENT_SCALE value"
+#endif
+
+#if (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_16_BITS)
+  #define PRI_FRACT     PRIu16
+#elif (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_32_BITS)
+  #define PRI_FRACT     PRIu32
+#elif (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_64_BITS)
+  #define PRI_FRACT     PRIu64
+#else
+  #error "Unsupported configRUN_TIME_TYPE_WIDTH"
 #endif
 
 static char s_Buf[SYS_MONITOR_BUFF_SIZE];
@@ -69,7 +76,10 @@ void smon_printf(const char* format_msg, ...)
     // Write to buffer:
     uint16_t avaliable = SYS_MONITOR_BUFF_SIZE - s_Len;
     if (len > avaliable)
-      len = avaliable;      // TODO - overflow !
+    {
+      LOG_WARNING("[SMON] Buffer overflow!");
+      len = avaliable;  
+    }
     memcpy(&s_Buf[s_Len], line, len);
     s_Len += len;
   }
@@ -83,7 +93,7 @@ uint16_t calc_load(configRUN_TIME_COUNTER_TYPE _busy, configRUN_TIME_COUNTER_TYP
   return (uint16_t)load;
 }
 
-configRUN_TIME_COUNTER_TYPE tasks_stats(configRUN_TIME_COUNTER_TYPE _elapsed)
+configRUN_TIME_COUNTER_TYPE tasks_stats(configRUN_TIME_COUNTER_TYPE _elapsed, uint16_t *_p_load_acc)
 {
   if (_elapsed == 0)
     return 0;
@@ -91,27 +101,29 @@ configRUN_TIME_COUNTER_TYPE tasks_stats(configRUN_TIME_COUNTER_TYPE _elapsed)
   UBaseType_t task_count;
   task_count = uxTaskGetSystemState(s_Tasks, SMON_TASKS_MAX_COUNT, NULL);
 
+  uint16_t load_acc = 0;
   configRUN_TIME_COUNTER_TYPE run_time = 0;
   for (UBaseType_t i = 0; i < task_count; i++)
   {
     TaskStatus_t *task = &s_Tasks[i];
 
-    // TODO - except IDLE:
-    if (task->uxCurrentPriority == 0)
-      continue;
-
     // TODO add sort by xTaskNumber:
     uint16_t load = calc_load(task->ulRunTimeCounter, _elapsed);
 
-    smon_printf("%s\t%u\t%2u.%"PREFIX_FRACT"u%%\t %u\t:%s",
+    smon_printf("%s\t%u\t%2"PRIu16".%"PREFIX_FRACT""PRIu16"%%\t %u\t:%s",
                 task->pcTaskName, task->usStackHighWaterMark,
                 load / SCALE, load % SCALE,
                 task->uxCurrentPriority, s_TaskState[task->eCurrentState]);
 
+    // TODO - except IDLE task:
+    if (task->uxCurrentPriority == 0)
+      continue;
 
+    load_acc += load;
     run_time += task->ulRunTimeCounter;
   }
 
+  *_p_load_acc = load_acc;
   return run_time;
 }
 
@@ -123,12 +135,10 @@ void Thread(void *pvParameters)
   configRUN_TIME_COUNTER_TYPE recent = 0;
   while (1)
   {
+    // Time interval measurement:
     configRUN_TIME_COUNTER_TYPE now, elapsed;
-
     now = portGET_RUN_TIME_COUNTER_VALUE();
-    elapsed = (configRUN_TIME_COUNTER_TYPE)(now - recent);
-
-    // Re-init for next iteration:
+    elapsed = now - recent;
     recent = now;
 
     // Clear screen:
@@ -139,24 +149,34 @@ void Thread(void *pvParameters)
     smon_printf(BOLD"TASK\tSTACK\tLOAD\tPrior.\tState"NORMAL
                 "\r\n----------------------------------------");
 
-    configRUN_TIME_COUNTER_TYPE cpu_run_time;
-    cpu_run_time = tasks_stats(elapsed);
+    uint16_t load_acc;
+    configRUN_TIME_COUNTER_TYPE run_time;
+    run_time = tasks_stats(elapsed, &load_acc);
 
     // Separator:
     smon_printf("========================================\r\n");
 
     // CPU load:
-    uint16_t cpu_load = calc_load(cpu_run_time, elapsed);
-    smon_printf(BOLD"CPU load:\t%d.%"PREFIX_FRACT"d%%"NORMAL,
-                cpu_load / SCALE, cpu_load % SCALE);
+    uint16_t load = calc_load(run_time, elapsed);
+    smon_printf(BOLD"CPU load:\t%"PRIu16".%"PREFIX_FRACT"u%%"NORMAL,
+                load / SCALE, load % SCALE);
 
     // DEBUG:
     #if SYS_MON_VIEW_DEBUG_INFO
     {
-      smon_printf("Elapsed: \t%u cnt", elapsed);
+      smon_printf("ACC load:\t%"PRIu16".%"PREFIX_FRACT""PRIu16"%%",
+                  load_acc / SCALE, load_acc % SCALE);
+
+      int16_t load_err = load - load_acc;
+      bool sign = load_err < 0;
+      if (sign) load_err = -load_err;
+      smon_printf("Err load:\t%s%"PRIu16".%"PREFIX_FRACT""PRIu16"%%", sign ? "-" : "",
+                  load_err / SCALE, load_err % SCALE);
+
+      smon_printf("Elapsed: \t%"PRI_FRACT" cnt", elapsed);
 
       uint16_t remaining = SYS_MONITOR_BUFF_SIZE - s_Len;
-      smon_printf("Free in FIFO:\t%d bytes", remaining);
+      smon_printf("Free in buf:\t%"PRIu16" bytes", remaining);
     }
     #endif /* SYS_MON_VIEW_DEBUG_INFO */
 
