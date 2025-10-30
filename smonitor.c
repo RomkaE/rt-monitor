@@ -4,16 +4,17 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <assert.h>
 
-#include "sys_monitor_cfg.h"
+#include "rtmon_config.h"
 #include "smonitor.h"
-#include "inc/terminal.h"
-#include "port/inc/port.h"
-#include "log/log.h"
+#include "private/terminal.h"
+#include "port/port.h"
 
 // FreeRTOS:
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 
 #define SCALE    SYS_MON_PERCENT_SCALE
 #if SCALE == 10
@@ -36,8 +37,9 @@
   #error "Unsupported configRUN_TIME_TYPE_WIDTH"
 #endif
 
-static char s_Buf[SYS_MONITOR_BUFF_SIZE];
-static uint16_t s_Len;
+#if SYS_MON_LINE_BUFF_SIZE < 32
+  #error SYS_MON_LINE_BUFF_SIZE cannot be less than 32
+#endif
 
 static TaskStatus_t s_Tasks[SMON_TASKS_MAX_COUNT];
 
@@ -48,40 +50,45 @@ static const char *s_TaskState[] = {
   [eSuspended]  "Suspend",
   [eDeleted]    "Del", "Unknown" };
 
+static StaticTask_t xSMonTaskTCB;
+static StackType_t uxSMonTaskStack[SMON_TASK_STACK_DEPTH];
+
+static SemaphoreHandle_t s_SemXmitHandle;
+static StaticSemaphore_t s_SemXmit;
+
 void smon_printf(const char* format_msg, ...)
 {
-  char line[SYS_MON_LINE_BUFF_SIZE];
-  const size_t size = SYS_MON_LINE_BUFF_SIZE;
-  int len = 0;
+  static char buf[3 + SYS_MON_LINE_BUFF_SIZE] = CLEAREOL;
+  const size_t size = sizeof(buf);
+  //const char *line = &buf[4];
+  int len = 3;
 
   // Message:
   va_list p_args;
   va_start(p_args, format_msg);
-  len = vsnprintf(line, size - len, format_msg, p_args);
+  len += vsnprintf(&buf[3], size, format_msg, p_args);
   va_end(p_args);
 
   // Check and write:
   if (len > 0)
   {
     // Check and fix to max length:
-    if (len > size)
-      len = size;
-
-    // Add \r\n:
-    if (size - len < 2)
-      len = size - 2;
-    line[len++] = '\r';
-    line[len++] = '\n';
-
-    // Write to buffer:
-    uint16_t avaliable = SYS_MONITOR_BUFF_SIZE - s_Len;
-    if (len > avaliable)
+    if (len + 2 > size)
     {
-      LOG_WARNING("[SMON] Buffer overflow!");
-      len = avaliable;  
+      memcpy(&buf[size - 5], "...\r\n", 5);
+      len = size;
     }
-    memcpy(&s_Buf[s_Len], line, len);
-    s_Len += len;
+    else
+    {
+     buf[len++] = '\r';
+     buf[len++] = '\n';
+    }
+
+    // Send:
+    rtmon_xmitBuf(buf, len);
+
+    // Wait:
+    xSemaphoreTake(s_SemXmitHandle, pdMS_TO_TICKS(100));  // TODO - check result
   }
 }
 
@@ -142,19 +149,20 @@ void Thread(void *pvParameters)
     recent = now;
 
     // Clear screen:
-    smon_printf(CLEARSCR);
-    smon_printf(GOTOYX, 0, 0);
+    // smon_printf(CLEARSCR);
+    smon_printf(CLEAREOS GOTOYX, 0, 0);
 
     // Header:
-    smon_printf(BOLD"TASK\tSTACK\tLOAD\tPrior.\tState"NORMAL
-                "\r\n----------------------------------------");
+    smon_printf(BOLD"TASK\tSTACK\tLOAD\tPrior.\tState"NORMAL);
+    smon_printf("----------------------------------------");
 
     uint16_t load_acc;
     configRUN_TIME_COUNTER_TYPE run_time;
     run_time = tasks_stats(elapsed, &load_acc);
 
     // Separator:
-    smon_printf("========================================\r\n");
+    smon_printf("========================================");
+    // smon_printf("");
 
     // CPU load:
     uint16_t load = calc_load(run_time, elapsed);
@@ -174,9 +182,6 @@ void Thread(void *pvParameters)
                   load_err / SCALE, load_err % SCALE);
 
       smon_printf("Elapsed: \t%"PRI_FRACT" cnt", elapsed);
-
-      uint16_t remaining = SYS_MONITOR_BUFF_SIZE - s_Len;
-      smon_printf("Free in buf:\t%"PRIu16" bytes", remaining);
     }
     #endif /* SYS_MON_VIEW_DEBUG_INFO */
 
@@ -187,21 +192,26 @@ void Thread(void *pvParameters)
     }
     #endif /* configSUPPORT_DYNAMIC_ALLOCATION */
 
-    // Send:
-    portSysMonitor_TxBuff(s_Buf, s_Len);
-    s_Len = 0;
-
     // Delay:
     vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(SYS_MONITOR_UPDATE_PERIOD_MS));
   }
 }
 
+void rtmon_xmitCmpltCallback(void)
+{
+  BaseType_t res = xSemaphoreGive(s_SemXmitHandle);
+  assert(res == pdTRUE);
+}
+
 void smonitor_Init(void)
 {
-  static StaticTask_t xSMonTaskTCB;
-  static StackType_t uxSMonTaskStack[SMON_TASK_STACK_DEPTH];
-
-  portSysMonitor_Init();
-  xTaskCreateStatic(Thread, "SMON", SMON_TASK_STACK_DEPTH,
+  rtmon_portInit();
+  
+  TaskHandle_t th = xTaskCreateStatic(Thread, "SMON", SMON_TASK_STACK_DEPTH,
      NULL, configMAX_PRIORITIES - 1, uxSMonTaskStack, &xSMonTaskTCB);
+  assert(th != NULL);
+
+  s_SemXmitHandle = xSemaphoreCreateBinaryStatic(&s_SemXmit);
+  assert(s_SemXmitHandle != NULL);
+  xSemaphoreTake(s_SemXmitHandle, 0);
 }

@@ -1,32 +1,13 @@
 
-/*============================ INCLUDES ======================================*/
-
 #include <stdint.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
-#include "sys_monitor_cfg.h"
-#include "../inc/port.h"
+#include "../port.h"
+#include "rtmon_config.h"
 
-#include "FreeRTOS.h"
-#include "FreeRTOSConfig.h"
-
-/*============================ PRIVATE DEFINITIONS ===========================*/
-
-
-/*============================ TYPES =========================================*/
-
-
-/*============================ VARIABLES =====================================*/
-
-static const uint8_t *s_pBufUART;
-static uint16_t s_sizeBufUART;
-static uint16_t s_idxBufUART;
-
-/*============================ PRIVATE PROTOTYPES ============================*/
-
-
-/*============================ IMPLEMENTATION (PRIVATE FUNCTIONS) ============*/
+static const char *s_pBufUART;
+static size_t s_sizeBufUART, s_idxBufUART;
 
 ISR(USART1_UDRE_vect)
 {
@@ -35,14 +16,11 @@ ISR(USART1_UDRE_vect)
   if (s_idxBufUART >= s_sizeBufUART)
   {
     UCSR1B &= ~(1 << UDRIE1);   // DISABLE <Data Register Empty Interrupt>
-    s_idxBufUART = 0;
-//    osal_semaphore_post(s_SemUart, true);
+    rtmon_xmitCmpltCallback();
   }
 }
 
-/*============================ IMPLEMENTATION (PUBLIC FUNCTIONS) =============*/
-
-void portSysMonitor_Init(void)
+void rtmon_portInit(void)
 {
   UBRR1H = 0;
   UBRR1L = 8;           // 115200
@@ -55,14 +33,15 @@ void portSysMonitor_Init(void)
   UCSR1A |= (1 << TXC1) | (1 << RXC1); // сбросить TXC/RXC
 }
 
-void portSysMonitor_TxBuff(const void *_buff, uint16_t _lenght)
+void rtmon_xmitBuf(const char *_buf, const size_t _lenght)
 {
   s_sizeBufUART = _lenght;
-  s_pBufUART = _buff;
+  s_pBufUART = _buf;
+  s_idxBufUART = 0;
   UCSR1B |= (1<<UDRIE1);    // ENABLE <Data Register Empty Interrupt>
 }
 
-void portSysMonitor_CONFIGURE_TIMER_FOR_RUN_TIME_STATS(void)
+void rtmon_portInitRunTimer(void)
 {
   TCNT3 = 0;      // clear counter
   TCCR3A = 0;     // normal mode
@@ -77,7 +56,7 @@ void portSysMonitor_CONFIGURE_TIMER_FOR_RUN_TIME_STATS(void)
   TCCR3B = (4 << CS30);   // div 256
 }
 
-configRUN_TIME_COUNTER_TYPE portSysMonitor_GetRunTimeCounterValue(void)
+configRUN_TIME_COUNTER_TYPE rtmon_portGetRunTimer(void)
 {
   configRUN_TIME_COUNTER_TYPE ret;
 
