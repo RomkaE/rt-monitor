@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <inttypes.h>
 
 #include "rtmon_config.h"
 #include "rtmon.h"
@@ -57,8 +58,10 @@ static const char *s_TaskState[] = {
   [eSuspended]  "Suspend",
   [eDeleted]    "Del", "Unknown" };
 
+#if RTMON_CFG_USE_STATIC_ALOCATION
 static StaticTask_t xRtMonTaskTCB;
 static StackType_t uxRtMonTaskStack[RTMON_CFG_TASK_STACK_DEPTH];
+#endif
 
 static void print(const char* format_msg, ...)
 {
@@ -202,7 +205,13 @@ void rtmon_Init(void)
 {
   rtmon_portInit();
   
+#if RTMON_CFG_USE_STATIC_ALOCATION
   TaskHandle_t th = xTaskCreateStatic(Thread, "SMON", RTMON_CFG_TASK_STACK_DEPTH,
      NULL, configMAX_PRIORITIES - 1, uxRtMonTaskStack, &xRtMonTaskTCB);
   assert(th != NULL);
+#else
+  BaseType_t res = xTaskCreate(Thread, "SMON", RTMON_CFG_TASK_STACK_DEPTH,
+     NULL, configMAX_PRIORITIES - 1, NULL);
+  assert(res != pdPASS);
+#endif
 }
