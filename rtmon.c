@@ -7,7 +7,7 @@
 #include <assert.h>
 
 #include "rtmon_config.h"
-#include "smonitor.h"
+#include "rtmon.h"
 #include "private/terminal.h"
 #include "port/port.h"
 
@@ -16,7 +16,7 @@
 #include "task.h"
 #include "semphr.h"
 
-#define SCALE    SYS_MON_PERCENT_SCALE
+#define SCALE    RTMON_CFG_PERCENT_SCALE
 #if SCALE == 10
   #define PREFIX_FRACT "01"
 #elif SCALE == 100
@@ -24,7 +24,7 @@
 #elif SCALE == 1000
   #define PREFIX_FRACT "03"
 #else
-  #error "Unsupported SYS_MON_PERCENT_SCALE value"
+  #error "Unsupported RTMON_CFG_PERCENT_SCALE value"
 #endif
 
 #if (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_16_BITS)
@@ -37,14 +37,14 @@
   #error "Unsupported configRUN_TIME_TYPE_WIDTH"
 #endif
 
-#if SYS_MON_LINE_BUFF_SIZE < 32
-  #error SYS_MON_LINE_BUFF_SIZE cannot be less than 32
+#if RTMON_CFG_LINE_BUFF_SIZE < 32
+  #error RTMON_CFG_LINE_BUFF_SIZE cannot be less than 32
 #endif
 
 #define PREFIX_SIZE     ( sizeof(CLEAREOL) - 1 )
-#define BUF_SIZE        ( PREFIX_SIZE + SYS_MON_LINE_BUFF_SIZE)
+#define BUF_SIZE        ( PREFIX_SIZE + RTMON_CFG_LINE_BUFF_SIZE)
 
-static TaskStatus_t s_Tasks[SMON_TASKS_MAX_COUNT];
+static TaskStatus_t s_Tasks[RTMON_CFG_TASKS_MAX_COUNT];
 
 static const char *s_TaskState[] = {
   [eRunning]    "Run",
@@ -53,8 +53,8 @@ static const char *s_TaskState[] = {
   [eSuspended]  "Suspend",
   [eDeleted]    "Del", "Unknown" };
 
-static StaticTask_t xSMonTaskTCB;
-static StackType_t uxSMonTaskStack[SMON_TASK_STACK_DEPTH];
+static StaticTask_t xRtMonTaskTCB;
+static StackType_t uxRtMonTaskStack[RTMON_CFG_TASK_STACK_DEPTH];
 
 static SemaphoreHandle_t s_SemXmitHandle;
 static StaticSemaphore_t s_SemXmit;
@@ -69,7 +69,7 @@ static void print(const char* format_msg, ...)
 {
   static char s_Buf[BUF_SIZE] = CLEAREOL;
   char *const line = &s_Buf[PREFIX_SIZE];
-  const size_t size = SYS_MON_LINE_BUFF_SIZE;
+  const size_t size = RTMON_CFG_LINE_BUFF_SIZE;
 
   // Message:
   va_list p_args;
@@ -114,7 +114,7 @@ static configRUN_TIME_COUNTER_TYPE tasks_stats(configRUN_TIME_COUNTER_TYPE _elap
     return 0;
 
   UBaseType_t task_count;
-  task_count = uxTaskGetSystemState(s_Tasks, SMON_TASKS_MAX_COUNT, NULL);
+  task_count = uxTaskGetSystemState(s_Tasks, RTMON_CFG_TASKS_MAX_COUNT, NULL);
 
   uint16_t load_acc = 0;
   configRUN_TIME_COUNTER_TYPE run_time = 0;
@@ -202,16 +202,16 @@ static void Thread(void *pvParameters)
     print(CLEAREOS);
 
     // Delay:
-    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(SYS_MONITOR_UPDATE_PERIOD_MS));
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(RTMON_CFG_UPDATE_PERIOD_MS));
   }
 }
 
-void smonitor_Init(void)
+void rtmon_Init(void)
 {
   rtmon_portInit();
   
-  TaskHandle_t th = xTaskCreateStatic(Thread, "SMON", SMON_TASK_STACK_DEPTH,
-     NULL, configMAX_PRIORITIES - 1, uxSMonTaskStack, &xSMonTaskTCB);
+  TaskHandle_t th = xTaskCreateStatic(Thread, "SMON", RTMON_CFG_TASK_STACK_DEPTH,
+     NULL, configMAX_PRIORITIES - 1, uxRtMonTaskStack, &xRtMonTaskTCB);
   assert(th != NULL);
 
   s_SemXmitHandle = xSemaphoreCreateBinaryStatic(&s_SemXmit);
