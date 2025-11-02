@@ -3,14 +3,18 @@
 #define RTMON_PORT_H_
 
 #include <stddef.h>
-#include "FreeRTOS.h"
-#include "FreeRTOSConfig.h"
+
+#ifndef ESP_PLATFORM
+  #include "FreeRTOS.h"
+  #include "FreeRTOSConfig.h"
+#else
+  #include "freertos/FreeRTOS.h"
+  #include "freertos/task.h"
+#endif
 
 void rtmon_portInit(void);
 
 void rtmon_xmitBuf(const char *_buf, const size_t _lenght);
-
-void rtmon_xmitCmpltCallback(void);
 
 void rtmon_portInitRunTimer(void);
 

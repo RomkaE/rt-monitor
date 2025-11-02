@@ -1,7 +1,7 @@
 
 #include <assert.h>
-#include "sys_monitor_cfg.h"
-#include "../inc/port.h"
+#include "rtmon_config.h"
+#include "../port.h"
 
 // ESP-IDF:
 #include "driver/uart.h"
@@ -14,7 +14,7 @@
   static esp_pm_lock_handle_t s_pm_lock;
 #endif
 
-void portSysMonitor_Init(void)
+void rtmon_portInit(void)
 {
   esp_err_t res;
 
@@ -32,15 +32,15 @@ void portSysMonitor_Init(void)
       .source_clk = UART_SCLK_APB
   };
 
-  res = uart_param_config(SYS_MONITOR_UART_NUM, &uart_config);
+  res = uart_param_config(RTMON_CFG_UART_NUM, &uart_config);
   assert(res == ESP_OK);
-  res = uart_set_pin(SYS_MONITOR_UART_NUM, SYS_MONITOR_TX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+  res = uart_set_pin(RTMON_CFG_UART_NUM, RTMON_CFG_TX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
   assert(res == ESP_OK);
-  res = uart_driver_install(SYS_MONITOR_UART_NUM, 256, 256, 0, NULL, 0);
+  res = uart_driver_install(RTMON_CFG_UART_NUM, 256, 256, 0, NULL, 0);
   assert(res == ESP_OK);
 }
 
-void portSysMonitor_TxBuff(const void *_buff, uint16_t _lenght)
+void rtmon_xmitBuf(const char *_buf, const size_t _lenght)
 {
   esp_err_t res;
 
@@ -49,9 +49,9 @@ void portSysMonitor_TxBuff(const void *_buff, uint16_t _lenght)
     assert(res == ESP_OK);
   #endif
 
-  int tx_size = uart_write_bytes(SYS_MONITOR_UART_NUM, _buff, _lenght);
+  int tx_size = uart_write_bytes(RTMON_CFG_UART_NUM, _buf, _lenght);
   assert(tx_size == _lenght);
-  res = uart_wait_tx_done(SYS_MONITOR_UART_NUM, portMAX_DELAY);
+  res = uart_wait_tx_done(RTMON_CFG_UART_NUM, portMAX_DELAY);
   assert(res == ESP_OK);
 
   #ifdef CONFIG_PM_ENABLE

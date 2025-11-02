@@ -12,9 +12,15 @@
 #include "port/port.h"
 
 // FreeRTOS:
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
+#ifndef ESP_PLATFORM
+  #include "FreeRTOS.h"
+  #include "task.h"
+  #include "semphr.h"
+#else
+  #include "freertos/FreeRTOS.h"
+  #include "freertos/task.h"
+  #include "freertos/semphr.h"
+#endif
 
 #define SCALE    RTMON_CFG_PERCENT_SCALE
 #if SCALE == 10
