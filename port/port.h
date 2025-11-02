@@ -6,10 +6,8 @@
 
 #ifndef ESP_PLATFORM
   #include "FreeRTOS.h"
-  #include "FreeRTOSConfig.h"
 #else
   #include "freertos/FreeRTOS.h"
-  #include "freertos/task.h"
 #endif
 
 void rtmon_portInit(void);

@@ -1,4 +1,5 @@
 
+#include <assert.h>
 #include <stdint.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -6,8 +7,15 @@
 #include "../port.h"
 #include "rtmon_config.h"
 
+// FreeRTOS:
+#include "FreeRTOS.h"
+#include "semphr.h"
+
 static const char *s_pBufUART;
 static size_t s_sizeBufUART, s_idxBufUART;
+
+static SemaphoreHandle_t s_SemXmitHandle;
+static StaticSemaphore_t s_SemXmit;
 
 ISR(USART1_UDRE_vect)
 {
@@ -16,7 +24,13 @@ ISR(USART1_UDRE_vect)
   if (s_idxBufUART >= s_sizeBufUART)
   {
     UCSR1B &= ~(1 << UDRIE1);   // DISABLE <Data Register Empty Interrupt>
-    rtmon_xmitCmpltCallback();
+
+    BaseType_t switch_context = pdFALSE;
+    xSemaphoreGiveFromISR(s_SemXmitHandle, switch_context);
+    if (switch_context != pdFALSE)
+    {
+//      portEND_SWITCHING_ISR();    // TODO
+    }
   }
 }
 
@@ -31,10 +45,18 @@ void rtmon_portInit(void)
   // Очистить флаги:
   UDR1;                   // dummy read
   UCSR1A |= (1 << TXC1) | (1 << RXC1); // сбросить TXC/RXC
+
+  s_SemXmitHandle = xSemaphoreCreateBinaryStatic(&s_SemXmit);
+  assert(s_SemXmitHandle != NULL);
+  xSemaphoreTake(s_SemXmitHandle, 0);
 }
 
 void rtmon_xmitBuf(const char *_buf, const size_t _lenght)
 {
+  // Wait for the last operation to complete:
+  xSemaphoreTake(s_SemXmitHandle, portMAX_DELAY);
+
+  // Send:
   s_sizeBufUART = _lenght;
   s_pBufUART = _buf;
   s_idxBufUART = 0;

@@ -15,11 +15,9 @@
 #ifndef ESP_PLATFORM
   #include "FreeRTOS.h"
   #include "task.h"
-  #include "semphr.h"
 #else
   #include "freertos/FreeRTOS.h"
   #include "freertos/task.h"
-  #include "freertos/semphr.h"
 #endif
 
 #define SCALE    RTMON_CFG_PERCENT_SCALE
@@ -62,15 +60,6 @@ static const char *s_TaskState[] = {
 static StaticTask_t xRtMonTaskTCB;
 static StackType_t uxRtMonTaskStack[RTMON_CFG_TASK_STACK_DEPTH];
 
-static SemaphoreHandle_t s_SemXmitHandle;
-static StaticSemaphore_t s_SemXmit;
-
-void rtmon_xmitCmpltCallback(void)
-{
-  BaseType_t res = xSemaphoreGive(s_SemXmitHandle);
-  assert(res == pdTRUE);
-}
-
 static void print(const char* format_msg, ...)
 {
   static char s_Buf[BUF_SIZE] = CLEAREOL;
@@ -100,9 +89,6 @@ static void print(const char* format_msg, ...)
 
     // Send:
     rtmon_xmitBuf(s_Buf, PREFIX_SIZE + len);
-
-    // Wait:
-    xSemaphoreTake(s_SemXmitHandle, pdMS_TO_TICKS(100));  // TODO - check result
   }
 }
 
@@ -219,8 +205,4 @@ void rtmon_Init(void)
   TaskHandle_t th = xTaskCreateStatic(Thread, "SMON", RTMON_CFG_TASK_STACK_DEPTH,
      NULL, configMAX_PRIORITIES - 1, uxRtMonTaskStack, &xRtMonTaskTCB);
   assert(th != NULL);
-
-  s_SemXmitHandle = xSemaphoreCreateBinaryStatic(&s_SemXmit);
-  assert(s_SemXmitHandle != NULL);
-  xSemaphoreTake(s_SemXmitHandle, 0);
 }
