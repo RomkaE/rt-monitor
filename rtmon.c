@@ -33,11 +33,11 @@
 #endif
 
 #if (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_16_BITS)
-  #define PRI_FRACT     PRIu16
+  #define PRI_RUN_TIME     PRIu16
 #elif (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_32_BITS)
-  #define PRI_FRACT     PRIu32
+  #define PRI_RUN_TIME     PRIu32
 #elif (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_64_BITS)
-  #define PRI_FRACT     PRIu64
+  #define PRI_RUN_TIME     PRIu64
 #else
   #error "Unsupported configRUN_TIME_TYPE_WIDTH"
 #endif
@@ -120,7 +120,7 @@ static configRUN_TIME_COUNTER_TYPE tasks_stats(configRUN_TIME_COUNTER_TYPE _elap
     // TODO add sort by xTaskNumber:
     uint16_t load = calc_load(task->ulRunTimeCounter, _elapsed);
 
-    print("%s\t%u\t%2"PRIu16".%"PREFIX_FRACT""PRIu16"%%\t %u\t:%s",
+    print("%-16s%u\t%2"PRIu16".%"PREFIX_FRACT""PRIu16"%%\t %u\t:%s",
                 task->pcTaskName, task->usStackHighWaterMark,
                 load / SCALE, load % SCALE,
                 task->uxCurrentPriority, s_TaskState[task->eCurrentState]);
@@ -172,7 +172,7 @@ static void Thread(void *pvParameters)
                 load / SCALE, load % SCALE);
 
     // DEBUG:
-    #if SYS_MON_VIEW_DEBUG_INFO
+    #if RTMON_CFG_VIEW_DEBUG_INFO
     {
       print("ACC load:\t%"PRIu16".%"PREFIX_FRACT""PRIu16"%%",
                   load_acc / SCALE, load_acc % SCALE);
@@ -183,14 +183,14 @@ static void Thread(void *pvParameters)
       print("Err load:\t%s%"PRIu16".%"PREFIX_FRACT""PRIu16"%%", sign ? "-" : "",
                   load_err / SCALE, load_err % SCALE);
 
-      print("Elapsed: \t%"PRI_FRACT" cnt", elapsed);
+      print("Elapsed: \t%"PRI_RUN_TIME" cnt", elapsed);
     }
-    #endif /* SYS_MON_VIEW_DEBUG_INFO */
+    #endif /* RTMON_CFG_VIEW_DEBUG_INFO */
 
     #if configSUPPORT_DYNAMIC_ALLOCATION
     {
-      print("FREE HEAP:\t%u\r\n", xPortGetFreeHeapSize());
-      print("MIN HEAP:\t%u\r\n", xPortGetMinimumEverFreeHeapSize());
+      print("FREE HEAP:\t%u", xPortGetFreeHeapSize());
+      print("MIN HEAP:\t%u", xPortGetMinimumEverFreeHeapSize());
     }
     #endif /* configSUPPORT_DYNAMIC_ALLOCATION */
 
@@ -212,6 +212,6 @@ void rtmon_Init(void)
 #else
   BaseType_t res = xTaskCreate(Thread, "SMON", RTMON_CFG_TASK_STACK_DEPTH,
      NULL, configMAX_PRIORITIES - 1, NULL);
-  assert(res != pdPASS);
+  assert(res == pdPASS);
 #endif
 }
