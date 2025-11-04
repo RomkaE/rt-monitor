@@ -28,9 +28,7 @@ ISR(USART1_UDRE_vect)
     BaseType_t switch_context = pdFALSE;
     xSemaphoreGiveFromISR(s_SemXmitHandle, switch_context);
     if (switch_context != pdFALSE)
-    {
-//      portEND_SWITCHING_ISR();    // TODO
-    }
+      portYIELD_FROM_ISR();
   }
 }
 
@@ -48,19 +46,19 @@ void rtmon_portInit(void)
 
   s_SemXmitHandle = xSemaphoreCreateBinaryStatic(&s_SemXmit);
   assert(s_SemXmitHandle != NULL);
-  xSemaphoreTake(s_SemXmitHandle, 0);
 }
 
 void rtmon_xmitBuf(const char *_buf, const size_t _lenght)
 {
-  // Wait for the last operation to complete:
-  xSemaphoreTake(s_SemXmitHandle, portMAX_DELAY);
-
   // Send:
   s_sizeBufUART = _lenght;
   s_pBufUART = _buf;
   s_idxBufUART = 0;
   UCSR1B |= (1<<UDRIE1);    // ENABLE <Data Register Empty Interrupt>
+
+  // Wait for the operation to complete:
+  xSemaphoreTake(s_SemXmitHandle, portMAX_DELAY);
+
 }
 
 void rtmon_portInitRunTimer(void)
