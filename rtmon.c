@@ -139,6 +139,7 @@ static configRUN_TIME_COUNTER_TYPE tasks_stats(configRUN_TIME_COUNTER_TYPE _elap
 
 static void Thread(void *pvParameters)
 {
+  (void)pvParameters;
   TickType_t xLastWakeTime;
   xLastWakeTime = xTaskGetTickCount();
 
@@ -152,7 +153,6 @@ static void Thread(void *pvParameters)
     recent = now;
 
     // Clear screen:
-    // smon_printf(CLEARSCR);
     print(CLEAREOS GOTOYX, 0, 0);
 
     // Header:
@@ -194,6 +194,7 @@ static void Thread(void *pvParameters)
     }
     #endif /* configSUPPORT_DYNAMIC_ALLOCATION */
 
+    // Clear end of screen:
     print(CLEAREOS);
 
     // Delay:

@@ -4,18 +4,16 @@
 
 #include <stddef.h>
 
-#ifndef ESP_PLATFORM
-  #include "FreeRTOS.h"
-#else
-  #include "freertos/FreeRTOS.h"
-#endif
+//#ifndef ESP_PLATFORM
+//  #include "FreeRTOS.h"
+//#else
+//  #include "freertos/FreeRTOS.h"
+//#endif
 
 void rtmon_portInit(void);
 
-void rtmon_xmitBuf(const char *_buf, const size_t _lenght);
+void rtmon_xmitBuf(const char *_buf, const size_t _size);
 
-void rtmon_portInitRunTimer(void);
-
-configRUN_TIME_COUNTER_TYPE rtmon_portGetRunTimer(void);
+void rtmon_OnXmitCmplt(void);
 
 #endif /* RTMON_PORT_H_ */
