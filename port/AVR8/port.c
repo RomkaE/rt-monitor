@@ -17,13 +17,13 @@ static size_t s_sizeBufUART, s_idxBufUART;
 static SemaphoreHandle_t s_SemXmitHandle;
 static StaticSemaphore_t s_SemXmit;
 
-ISR(USART1_UDRE_vect)
+ISR(USART0_UDRE_vect)
 {
-  UDR1 = s_pBufUART[s_idxBufUART];
+  UDR0 = s_pBufUART[s_idxBufUART];
   s_idxBufUART++;
   if (s_idxBufUART >= s_sizeBufUART)
   {
-    UCSR1B &= ~(1 << UDRIE1);   // DISABLE <Data Register Empty Interrupt>
+    UCSR0B &= ~(1 << UDRIE0);   // DISABLE <Data Register Empty Interrupt>
 
     BaseType_t switch_context = pdFALSE;
     xSemaphoreGiveFromISR(s_SemXmitHandle, switch_context);
@@ -34,15 +34,15 @@ ISR(USART1_UDRE_vect)
 
 void rtmon_portInit(void)
 {
-  UBRR1H = 0;
-  UBRR1L = 8;           // 115200
-  UCSR1B |= (1<<TXEN1);
+  UBRR0H = 0;
+  UBRR0L = 8;           // 115200
+  UCSR0B |= (1<<TXEN0);
 
-  UCSR1C |= (1<<UCSZ11) | (1<<UCSZ10);         // 8-bit frame
+  UCSR0C |= (1<<UCSZ01) | (1<<UCSZ00);         // 8-bit frame
 
   // Очистить флаги:
-  UDR1;                   // dummy read
-  UCSR1A |= (1 << TXC1) | (1 << RXC1); // сбросить TXC/RXC
+  UDR0;                   // dummy read
+  UCSR0A |= (1 << TXC0) | (1 << RXC0); // сбросить TXC/RXC
 
   s_SemXmitHandle = xSemaphoreCreateBinaryStatic(&s_SemXmit);
   assert(s_SemXmitHandle != NULL);
@@ -54,7 +54,7 @@ void rtmon_xmitBuf(const char *_buf, const size_t _lenght)
   s_sizeBufUART = _lenght;
   s_pBufUART = _buf;
   s_idxBufUART = 0;
-  UCSR1B |= (1<<UDRIE1);    // ENABLE <Data Register Empty Interrupt>
+  UCSR0B |= (1<<UDRIE0);    // ENABLE <Data Register Empty Interrupt>
 
   // Wait for the operation to complete:
   xSemaphoreTake(s_SemXmitHandle, portMAX_DELAY);
