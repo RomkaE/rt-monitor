@@ -7,6 +7,8 @@
 #include "../port.h"
 #include "rtmon_config.h"
 
+#if RTMON_ENABLED
+
 // FreeRTOS:
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -17,6 +19,16 @@ static size_t s_sizeBufUART, s_idxBufUART;
 static SemaphoreHandle_t s_SemXmitHandle;
 static StaticSemaphore_t s_SemXmit;
 
+// Counts Timer3 overflows so the run-time counter stays correct regardless
+// of how long a caller goes between rtmon_portGetRunTimer() calls (unlike
+// polling TCNT3's delta, which only survives a single wrap):
+static volatile uint16_t s_Ovf3Count = 0;
+
+ISR(TIMER3_OVF_vect)
+{
+  s_Ovf3Count++;
+}
+
 ISR(USART0_UDRE_vect)
 {
   UDR0 = s_pBufUART[s_idxBufUART];
@@ -26,7 +38,7 @@ ISR(USART0_UDRE_vect)
     UCSR0B &= ~(1 << UDRIE0);   // DISABLE <Data Register Empty Interrupt>
 
     BaseType_t switch_context = pdFALSE;
-    xSemaphoreGiveFromISR(s_SemXmitHandle, switch_context);
+    xSemaphoreGiveFromISR(s_SemXmitHandle, &switch_context);
     if (switch_context != pdFALSE)
       portYIELD_FROM_ISR();
   }
@@ -66,6 +78,7 @@ void rtmon_portInitRunTimer(void)
   TCNT3 = 0;      // clear counter
   TCCR3A = 0;     // normal mode
   TIFR3 = 0xFF;   // clear flags
+  s_Ovf3Count = 0;
 
   // CS | DIV
   //  1 |  1
@@ -73,7 +86,9 @@ void rtmon_portInitRunTimer(void)
   //  3 |  64
   //  4 |  256
   //  5 |  1024
-  TCCR3B = (4 << CS30);   // div 256
+  TCCR3B = (2 << CS30);   // div 8
+
+  TIMSK3 |= (1 << TOIE3);  // enable Timer3 overflow interrupt
 }
 
 configRUN_TIME_COUNTER_TYPE rtmon_portGetRunTimer(void)
@@ -83,15 +98,23 @@ configRUN_TIME_COUNTER_TYPE rtmon_portGetRunTimer(void)
   #if (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_16_BITS)
     ret = TCNT3;
   #elif (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_32_BITS)
-    static uint32_t counter = 0;
-    static uint16_t prev = 0;
-    uint16_t curr = TCNT3;
-    counter += (uint16_t)(curr - prev);
-    prev = curr;
-    ret = counter;
+    uint8_t sreg = SREG;
+    cli();
+    uint16_t tcnt = TCNT3;
+    uint16_t ovf = s_Ovf3Count;
+    // A wrap may have happened right before this read but after the ISR last
+    // ran (we're inside a critical section, so TIMER3_OVF_vect can't have
+    // fired for it yet) - catch it via the pending overflow flag:
+    if ((TIFR3 & (1 << TOV3)) && tcnt < 0x8000)
+      ovf++;
+    SREG = sreg;
+
+    ret = ((uint32_t)ovf << 16) | tcnt;
   #else
     #error "Unsupported configRUN_TIME_COUNTER_TYPE size"
   #endif
 
   return ret;
 }
+
+#endif
