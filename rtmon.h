@@ -6,6 +6,8 @@
 extern "C" {
 #endif
 
+#include "rtmon_config.h"
+
 void rtmon_Init(void);
 
 #ifdef __cplusplus

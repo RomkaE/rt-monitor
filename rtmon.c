@@ -97,7 +97,7 @@ static void print(const char* format_msg, ...)
 
 static uint16_t calc_load(configRUN_TIME_COUNTER_TYPE _busy, configRUN_TIME_COUNTER_TYPE _elapsed)
 {
-  uint32_t load = (uint32_t)_busy * SCALE * 100;
+  uint64_t load = (uint64_t)_busy * SCALE * 100;
   load = load + _elapsed / 2;
   load = load / _elapsed;
   return (uint16_t)load;
@@ -156,7 +156,7 @@ static void Thread(void *pvParameters)
     print(CLEAREOS GOTOYX, 0, 0);
 
     // Header:
-    print(BOLD"TASK\tSTACK\tLOAD\tPrior.\tState"NORMAL);
+    print(BOLD"TASK\t\tSTACK\tLOAD\tPrior.\tState"NORMAL);
     print("----------------------------------------");
 
     uint16_t load_acc;
