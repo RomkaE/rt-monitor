@@ -9,7 +9,7 @@
 
 #include "rtmon_config.h"
 #include "rtmon.h"
-#include "private/terminal.h"
+#include "private/term_profile.h"
 #include "port/port.h"
 
 // FreeRTOS:
@@ -46,7 +46,7 @@
   #error RTMON_CFG_LINE_BUFF_SIZE cannot be less than 32
 #endif
 
-#define PREFIX_SIZE     ( sizeof(CLEAREOL) - 1 )
+#define PREFIX_SIZE     ( sizeof(TERM_LINE_PREFIX) - 1 )
 #define BUF_SIZE        ( PREFIX_SIZE + RTMON_CFG_LINE_BUFF_SIZE)
 
 static TaskStatus_t s_Tasks[RTMON_CFG_TASKS_MAX_COUNT];
@@ -65,7 +65,7 @@ static StackType_t uxRtMonTaskStack[RTMON_CFG_TASK_STACK_DEPTH];
 
 static void print(const char* format_msg, ...)
 {
-  static char s_Buf[BUF_SIZE] = CLEAREOL;
+  static char s_Buf[BUF_SIZE] = TERM_LINE_PREFIX;
   char *const line = &s_Buf[PREFIX_SIZE];
   const size_t size = RTMON_CFG_LINE_BUFF_SIZE;
 
@@ -153,10 +153,10 @@ static void Thread(void *pvParameters)
     recent = now;
 
     // Clear screen:
-    print(CLEAREOS GOTOYX, 0, 0);
+    print(TERM_FRAME_BEGIN);
 
     // Header:
-    print(BOLD"TASK\t\tSTACK\tLOAD\tPrior.\tState"NORMAL);
+    print(TERM_EMPH_ON"TASK\t\tSTACK\tLOAD\tPrior.\tState"TERM_EMPH_OFF);
     print("----------------------------------------");
 
     uint16_t load_acc;
@@ -168,7 +168,7 @@ static void Thread(void *pvParameters)
 
     // CPU load:
     uint16_t load = calc_load(run_time, elapsed);
-    print(BOLD"CPU load:\t%"PRIu16".%"PREFIX_FRACT"u%%"NORMAL,
+    print(TERM_EMPH_ON"CPU load:\t%"PRIu16".%"PREFIX_FRACT"u%%"TERM_EMPH_OFF,
                 load / SCALE, load % SCALE);
 
     // DEBUG:
@@ -195,7 +195,7 @@ static void Thread(void *pvParameters)
     #endif /* configSUPPORT_DYNAMIC_ALLOCATION */
 
     // Clear end of screen:
-    print(CLEAREOS);
+    print(TERM_FRAME_END);
 
     // Delay:
     vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(RTMON_CFG_UPDATE_PERIOD_MS));

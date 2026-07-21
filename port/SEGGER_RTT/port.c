@@ -5,29 +5,35 @@
 #include "../port.h"
 
 #include "app-error/app_assert.h"
-#include "tusb.h"
+
+// FreeRTOS:
+#include "FreeRTOS.h"
+#include "task.h"
 
 #if defined(RTMON_RTT_BUFF_IDX)
 
 #include "SEGGER_RTT.h"
 
-static osal_semaphore_def_t sem_def;
-static osal_semaphore_t sem_cdc;
+#ifndef RTMON_CFG_XMIT_RETRIES
+  #define RTMON_CFG_XMIT_RETRIES    ( 2 )
+#endif
+#ifndef RTMON_CFG_XMIT_RETRY_MS
+  #define RTMON_CFG_XMIT_RETRY_MS   ( 10 )
+#endif
 
 static const uint8_t s_TermSwitch[2] = { 0xFFu, (uint8_t)('0' + RTMON_RTT_TERMINAL) };
 
 void rtmon_portInit(void)
 {
-  sem_cdc = osal_semaphore_create(&sem_def);
-  ASSERT(sem_cdc != NULL);
-
   SEGGER_RTT_Init();
 }
 
 void rtmon_xmitBuf(const char *_buf, const size_t _lenght)
 {
   size_t buf_size = _lenght;
-  do
+  unsigned retries = RTMON_CFG_XMIT_RETRIES;
+
+  while (buf_size)
   {
     uint32_t sent_n = 0;
 
@@ -36,29 +42,29 @@ void rtmon_xmitBuf(const char *_buf, const size_t _lenght)
       unsigned avail = SEGGER_RTT_GetAvailWriteSpace(RTMON_RTT_BUFF_IDX);
       if (avail > sizeof(s_TermSwitch))
       {
-        uint32_t send_n = TU_MIN((uint32_t)(avail - sizeof(s_TermSwitch)), (uint32_t)buf_size);
+        uint32_t send_n = avail - sizeof(s_TermSwitch);
+        if (send_n > buf_size)
+          send_n = buf_size;
         SEGGER_RTT_WriteNoLock(RTMON_RTT_BUFF_IDX, s_TermSwitch, sizeof(s_TermSwitch));
         sent_n = SEGGER_RTT_WriteNoLock(RTMON_RTT_BUFF_IDX, _buf, send_n);
       }
     }
     SEGGER_RTT_UNLOCK();
 
-    if (sent_n == 0)
+    if (sent_n)
     {
-      // Channel 0 is full. Back off and retry:
-      osal_task_delay(100);
-      continue;
+      // Buffer iteration:
+      _buf += sent_n;
+      buf_size -= sent_n;
+
+      // Reset retries counter:
+      retries = RTMON_CFG_XMIT_RETRIES;
     }
-
-    // Iteration:
-    _buf += sent_n;
-    buf_size -= sent_n;
-  } while(buf_size);
+    else if (retries--)
+      vTaskDelay(pdMS_TO_TICKS(RTMON_CFG_XMIT_RETRY_MS));   // wait for the next attempt
+    else
+      return;   // attempts exhausted - drop data and exit
+  }
 }
 
-void rtmon_OnXmitCmplt(void)
-{
-  osal_semaphore_post(sem_cdc, false);
-}
-
-#endif /* defined(RTMON_TUD_CDC_IF) */
+#endif /* defined(RTMON_RTT_BUFF_IDX) */
