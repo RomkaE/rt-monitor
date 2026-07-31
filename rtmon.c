@@ -24,10 +24,13 @@
 #define SCALE    RTMON_CFG_PERCENT_SCALE
 #if SCALE == 10
   #define PREFIX_FRACT "01"
+  #define COL_LOAD_W   "7"    // "%4u" + '.' + 1 digit + '%'
 #elif SCALE == 100
   #define PREFIX_FRACT "02"
+  #define COL_LOAD_W   "8"
 #elif SCALE == 1000
   #define PREFIX_FRACT "03"
+  #define COL_LOAD_W   "9"
 #else
   #error "Unsupported RTMON_CFG_PERCENT_SCALE value"
 #endif
@@ -46,10 +49,25 @@
   #error RTMON_CFG_LINE_BUFF_SIZE cannot be less than 32
 #endif
 
+// s_Order keeps task indices as uint8_t:
+#if RTMON_CFG_TASKS_MAX_COUNT > 255
+  #error RTMON_CFG_TASKS_MAX_COUNT cannot be greater than 255
+#endif
+
 #define PREFIX_SIZE     ( sizeof(TERM_LINE_PREFIX) - 1 )
 #define BUF_SIZE        ( PREFIX_SIZE + RTMON_CFG_LINE_BUFF_SIZE)
 
+// Table layout: fixed column widths, no tabs (a tab jumps to the next 8-column
+// stop, so the columns drift with the number of digits printed).
+// NAME(16, left) STACK(6) LOAD(COL_LOAD_W) PRIO(6) 2 spaces STATE(left)
+#define ROW_FMT     "%-16s%6u%4"PRIu16".%"PREFIX_FRACT PRIu16"%%%6u  %s"
+#define HEAD_FMT    "%-16s%6s%"COL_LOAD_W"s%6s  %s"
+
+#define TABLE_LINE_DASH   "--------------------------------------------"
+#define TABLE_LINE_EQ     "============================================"
+
 static TaskStatus_t s_Tasks[RTMON_CFG_TASKS_MAX_COUNT];
+static uint8_t s_Order[RTMON_CFG_TASKS_MAX_COUNT];
 
 static const char *s_TaskState[] = {
   [eRunning]    "Run",
@@ -103,6 +121,26 @@ static uint16_t calc_load(configRUN_TIME_COUNTER_TYPE _busy, configRUN_TIME_COUN
   return (uint16_t)load;
 }
 
+static void sort_by_task_number(UBaseType_t _count)
+{
+  for (UBaseType_t i = 0; i < _count; i++)
+    s_Order[i] = (uint8_t)i;
+
+  for (UBaseType_t i = 1; i < _count; i++)
+  {
+    const uint8_t task_idx = s_Order[i];
+    const UBaseType_t task_num = s_Tasks[task_idx].xTaskNumber;
+
+    UBaseType_t j = i;
+    while (j > 0 && s_Tasks[s_Order[j - 1]].xTaskNumber > task_num)
+    {
+      s_Order[j] = s_Order[j - 1];
+      j--;
+    }
+    s_Order[j] = task_idx;
+  }
+}
+
 static configRUN_TIME_COUNTER_TYPE tasks_stats(configRUN_TIME_COUNTER_TYPE _elapsed, uint16_t *_p_load_acc)
 {
   if (_elapsed == 0)
@@ -110,18 +148,17 @@ static configRUN_TIME_COUNTER_TYPE tasks_stats(configRUN_TIME_COUNTER_TYPE _elap
 
   UBaseType_t task_count;
   task_count = uxTaskGetSystemState(s_Tasks, RTMON_CFG_TASKS_MAX_COUNT, NULL);
+  sort_by_task_number(task_count);
 
   uint16_t load_acc = 0;
   configRUN_TIME_COUNTER_TYPE run_time = 0;
   for (UBaseType_t i = 0; i < task_count; i++)
   {
-    TaskStatus_t *task = &s_Tasks[i];
+    TaskStatus_t *task = &s_Tasks[s_Order[i]];
 
-    // TODO add sort by xTaskNumber:
     uint16_t load = calc_load(task->ulRunTimeCounter, _elapsed);
 
-    print("%-16s%u\t%2"PRIu16".%"PREFIX_FRACT""PRIu16"%%\t %u\t:%s",
-                task->pcTaskName, task->usStackHighWaterMark,
+    print(ROW_FMT, task->pcTaskName, task->usStackHighWaterMark,
                 load / SCALE, load % SCALE,
                 task->uxCurrentPriority, s_TaskState[task->eCurrentState]);
 
@@ -156,15 +193,16 @@ static void Thread(void *pvParameters)
     print(TERM_FRAME_BEGIN);
 
     // Header:
-    print(TERM_EMPH_ON"TASK\t\tSTACK\tLOAD\tPrior.\tState"TERM_EMPH_OFF);
-    print("----------------------------------------");
+    print(TERM_EMPH_ON HEAD_FMT TERM_EMPH_OFF,
+                "TASK", "STACK", "LOAD", "Prio", "State");
+    print(TABLE_LINE_DASH);
 
     uint16_t load_acc;
     configRUN_TIME_COUNTER_TYPE run_time;
     run_time = tasks_stats(elapsed, &load_acc);
 
     // Separator:
-    print("========================================");
+    print(TABLE_LINE_EQ);
 
     // CPU load:
     uint16_t load = calc_load(run_time, elapsed);
