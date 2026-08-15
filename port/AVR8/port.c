@@ -9,15 +9,21 @@
 
 #if RTMON_ENABLED
 
+#ifndef RTMON_PORT_XMIT_EXTERNAL
+  #define RTMON_PORT_XMIT_EXTERNAL    0
+#endif
+
 // FreeRTOS:
 #include "FreeRTOS.h"
 #include "semphr.h"
 
+#if !RTMON_PORT_XMIT_EXTERNAL
 static const char *s_pBufUART;
 static size_t s_sizeBufUART, s_idxBufUART;
 
 static SemaphoreHandle_t s_SemXmitHandle;
 static StaticSemaphore_t s_SemXmit;
+#endif /* !RTMON_PORT_XMIT_EXTERNAL */
 
 // Counts Timer3 overflows so the run-time counter stays correct regardless
 // of how long a caller goes between rtmon_portGetRunTimer() calls (unlike
@@ -29,6 +35,7 @@ ISR(TIMER3_OVF_vect)
   s_Ovf3Count++;
 }
 
+#if !RTMON_PORT_XMIT_EXTERNAL
 ISR(USART0_UDRE_vect)
 {
   UDR0 = s_pBufUART[s_idxBufUART];
@@ -43,9 +50,11 @@ ISR(USART0_UDRE_vect)
       portYIELD_FROM_ISR();
   }
 }
+#endif /* !RTMON_PORT_XMIT_EXTERNAL */
 
 void rtmon_portInit(void)
 {
+#if !RTMON_PORT_XMIT_EXTERNAL
   UBRR0H = 0;
   UBRR0L = 8;           // 115200
   UCSR0B |= (1<<TXEN0);
@@ -58,8 +67,10 @@ void rtmon_portInit(void)
 
   s_SemXmitHandle = xSemaphoreCreateBinaryStatic(&s_SemXmit);
   assert(s_SemXmitHandle != NULL);
+#endif /* !RTMON_PORT_XMIT_EXTERNAL */
 }
 
+#if !RTMON_PORT_XMIT_EXTERNAL
 void rtmon_xmitBuf(const char *_buf, const size_t _lenght)
 {
   // Send:
@@ -72,6 +83,7 @@ void rtmon_xmitBuf(const char *_buf, const size_t _lenght)
   xSemaphoreTake(s_SemXmitHandle, portMAX_DELAY);
 
 }
+#endif /* !RTMON_PORT_XMIT_EXTERNAL */
 
 void rtmon_portInitRunTimer(void)
 {
