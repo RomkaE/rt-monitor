@@ -246,11 +246,11 @@ void rtmon_Init(void)
   
 #if RTMON_CFG_USE_STATIC_ALOCATION
   TaskHandle_t th = xTaskCreateStatic(Thread, "SMON", RTMON_CFG_TASK_STACK_DEPTH,
-     NULL, configMAX_PRIORITIES - 1, uxRtMonTaskStack, &xRtMonTaskTCB);
+     NULL, RTMON_CFG_TASK_PRIO, uxRtMonTaskStack, &xRtMonTaskTCB);
   assert(th != NULL);
 #else
   BaseType_t res = xTaskCreate(Thread, "SMON", RTMON_CFG_TASK_STACK_DEPTH,
-     NULL, configMAX_PRIORITIES - 1, NULL);
+     NULL, RTMON_CFG_TASK_PRIO, NULL);
   assert(res == pdPASS);
 #endif
 }
