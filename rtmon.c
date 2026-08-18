@@ -35,11 +35,11 @@
   #error "Unsupported RTMON_CFG_PERCENT_SCALE value"
 #endif
 
-#if (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_16_BITS)
+#if (configTICK_TYPE_WIDTH_IN_BITS == TICK_TYPE_WIDTH_16_BITS)
   #define PRI_RUN_TIME     PRIu16
-#elif (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_32_BITS)
+#elif (configTICK_TYPE_WIDTH_IN_BITS == TICK_TYPE_WIDTH_32_BITS)
   #define PRI_RUN_TIME     PRIu32
-#elif (configRUN_TIME_TYPE_WIDTH == TICK_TYPE_WIDTH_64_BITS)
+#elif (configTICK_TYPE_WIDTH_IN_BITS == TICK_TYPE_WIDTH_64_BITS)
   #define PRI_RUN_TIME     PRIu64
 #else
   #error "Unsupported configRUN_TIME_TYPE_WIDTH"
@@ -85,7 +85,7 @@ static void print(const char* format_msg, ...)
 {
   static char s_Buf[BUF_SIZE] = TERM_LINE_PREFIX;
   char *const line = &s_Buf[PREFIX_SIZE];
-  const size_t size = RTMON_CFG_LINE_BUFF_SIZE;
+  const int size = RTMON_CFG_LINE_BUFF_SIZE;
 
   // Message:
   va_list p_args;
